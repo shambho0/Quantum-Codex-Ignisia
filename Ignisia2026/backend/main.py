@@ -26,6 +26,7 @@ from backend.model           import predict, load_model
 from backend.explainability  import get_shap_explanation
 from backend.fraud_detection import detect_circular_transactions
 from backend.loan_recommender import recommend_loan
+from backend.gstin           import validate_gstin
 
 # ──────────────────────────────────────────────
 # App setup
@@ -102,6 +103,12 @@ def _risk_band(score: int) -> str:
         return "High"
 
 
+def _raise_if_invalid_gstin(gstin: str) -> None:
+    ok, err = validate_gstin(gstin)
+    if not ok:
+        raise HTTPException(status_code=422, detail=err)
+
+
 def _score_gstin(gstin: str) -> ScoreResponse:
     """Core scoring logic shared by POST and GET endpoints."""
     # 1. Ingest live features
@@ -122,12 +129,9 @@ def _score_gstin(gstin: str) -> ScoreResponse:
         fraud_flag    = int(features["fraud_flag"]),
         is_circular   = fraud_result["is_circular"],
         cycle_count   = fraud_result["cycle_count"],
-        risk_score    = max(
-            fraud_result["risk_score"],
-            0.9 if features["fraud_flag"] == 1 else 0.0
-        ),
+        risk_score    = fraud_result["risk_score"],
         affected_nodes= fraud_result["affected_nodes"],
-    )
+    ) 
 
     # 5. Loan recommendation
     loan_result = recommend_loan(score, features)
@@ -160,8 +164,7 @@ async def health():
 async def score_post(request: ScoreRequest):
     """Score a business by GSTIN (POST)."""
     gstin = request.gstin.strip().upper()
-    if len(gstin) != 15:
-        raise HTTPException(status_code=422, detail="GSTIN must be exactly 15 characters.")
+    _raise_if_invalid_gstin(gstin)
     return _score_gstin(gstin)
 
 
@@ -169,8 +172,7 @@ async def score_post(request: ScoreRequest):
 async def score_get(gstin: str):
     """Score a business by GSTIN (GET convenience endpoint)."""
     gstin = gstin.strip().upper()
-    if len(gstin) != 15:
-        raise HTTPException(status_code=422, detail="GSTIN must be exactly 15 characters.")
+    _raise_if_invalid_gstin(gstin)
     return _score_gstin(gstin)
 
 
@@ -178,6 +180,7 @@ async def score_get(gstin: str):
 async def fraud_check(gstin: str):
     """Standalone fraud graph analysis for a GSTIN."""
     gstin = gstin.strip().upper()
+    _raise_if_invalid_gstin(gstin)
     result = detect_circular_transactions(gstin)
     return {
         "gstin": gstin,
@@ -199,6 +202,7 @@ async def score_history(gstin: str, n: int = 7):
     from backend.model    import predict
 
     gstin = gstin.strip().upper()
+    _raise_if_invalid_gstin(gstin)
     base  = get_base_features(gstin)
     history = []
 

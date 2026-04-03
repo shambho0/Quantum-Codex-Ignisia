@@ -35,8 +35,10 @@ if not exist "models\credit_model.cbm" (
 )
 
 :: Start FastAPI in background
-echo [3/3] Starting FastAPI backend on port 8000...
-start "FastAPI Backend" cmd /k "uvicorn backend.main:app --host 0.0.0.0 --port 8000"
+set API_PORT=8010
+set API_BASE=http://localhost:%API_PORT%
+echo [3/3] Starting FastAPI backend on port %API_PORT%...
+start "FastAPI Backend" cmd /k "uvicorn backend.main:app --host 0.0.0.0 --port %API_PORT%"
 
 :: Wait for API to start
 timeout /t 4 /nobreak >nul
@@ -46,7 +48,7 @@ echo       Starting Streamlit dashboard on port 8501...
 echo.
 echo ============================================================
 echo   Dashboard: http://localhost:8501
-echo   API Docs:  http://localhost:8000/docs
+echo   API Docs:  %API_BASE%/docs
 echo ============================================================
 echo.
 streamlit run dashboard/app.py --server.port 8501

@@ -22,6 +22,8 @@ import os
 # Allow imports from project root
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from backend.gstin import validate_gstin
+
 import requests
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -173,6 +175,7 @@ with col_input:
         "Enter GSTIN",
         placeholder="e.g. 27ABCDE1234F1Z5",
         label_visibility="collapsed",
+        max_chars=15,
     )
 
 with col_btn:
@@ -189,6 +192,22 @@ with col_sample:
     sample_choice = st.selectbox("Try a sample GSTIN", ["— select —"] + samples, label_visibility="collapsed")
     if sample_choice != "— select —":
         gstin_input = sample_choice
+
+# Highlight input when GSTIN is structurally valid (exactly 15 chars, all rules pass)
+_effective = (gstin_input or "").strip().upper()
+_gstin_ok, _ = validate_gstin(_effective)
+_border = "#38a169" if _gstin_ok else "rgba(99,179,237,0.3)"
+st.markdown(
+    f"""
+<style>
+.stTextInput > div > div > input {{
+    border: 2px solid {_border} !important;
+    background: {"#0f1f17" if _gstin_ok else "#1a1f35"} !important;
+}}
+</style>
+""",
+    unsafe_allow_html=True,
+)
 
 # ──────────────────────────────────────────────
 # API call
@@ -226,8 +245,9 @@ def call_history(gstin: str) -> list | None:
 
 if score_btn and gstin_input:
     gstin = gstin_input.strip().upper()
-    if len(gstin) != 15:
-        st.warning(" GSTIN must be exactly 15 characters.")
+    _ok, _msg = validate_gstin(gstin)
+    if not _ok:
+        st.error(_msg)
     else:
         with st.spinner("Fetching live signals and computing score..."):
             data = call_api(gstin)

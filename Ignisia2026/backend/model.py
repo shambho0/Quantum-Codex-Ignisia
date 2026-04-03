@@ -21,7 +21,7 @@ def _ensure_trained() -> None:
     os.makedirs(model_dir, exist_ok=True)
 
     if not os.path.exists(MODEL_PATH):
-        print("⚠️  Model not found. Running train_model.py ...")
+        print("Model not found. Running train_model.py ...")
         # Dynamically import and run the training script
         root = os.path.join(os.path.dirname(__file__), "..")
         sys.path.insert(0, root)
@@ -36,7 +36,7 @@ def load_model() -> CatBoostRegressor:
         _ensure_trained()
         _model = CatBoostRegressor()
         _model.load_model(MODEL_PATH)
-        print(f"✅ Model loaded from {MODEL_PATH}")
+        print(f"Model loaded from {MODEL_PATH}")
     return _model
 
 
