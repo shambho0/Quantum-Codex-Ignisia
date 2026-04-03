@@ -1,0 +1,17 @@
+fastapi
+uvicorn[standard]
+catboost
+shap
+networkx
+pandas
+numpy
+scikit-learn
+matplotlib
+seaborn
+streamlit
+pydantic
+python-dateutil
+requests
+Pillow
+easyocr
+python-multipart
