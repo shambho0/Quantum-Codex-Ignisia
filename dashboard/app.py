@@ -245,9 +245,12 @@ def call_api_invoice(file_list: list, gstin: str = "") -> dict | None:
         return None
 
 
-def call_history(gstin: str) -> list | None:
+def call_history(gstin: str, current_score: int = None) -> list | None:
     try:
-        r = requests.get(f"{API_BASE}/api/score-history/{gstin}", timeout=30)
+        url = f"{API_BASE}/api/score-history/{gstin}"
+        if current_score is not None:
+            url += f"?current_score={int(current_score)}"
+        r = requests.get(url, timeout=30)
         if r.status_code == 200:
             return r.json().get("history", [])
     except Exception:
@@ -411,7 +414,7 @@ if data:
 
     with r3c1:
         st.markdown('<div class="section-title"> Score Trend (Last 7 Days)</div>', unsafe_allow_html=True)
-        history = call_history(gstin_display)
+        history = call_history(gstin_display, current_score=score)
         if history:
             hist_df = pd.DataFrame(history)
             fig2, ax2 = plt.subplots(figsize=(7, 3))

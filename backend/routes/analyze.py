@@ -120,7 +120,7 @@ async def analyze_invoice(
     }
 
 @router.get("/score-history/{gstin}")
-async def score_history(gstin: str, n: int = 7):
+async def score_history(gstin: str, current_score: Optional[int] = None, n: int = 7):
     """Simulate score history over the last N days."""
     import datetime
     import random
@@ -130,20 +130,27 @@ async def score_history(gstin: str, n: int = 7):
         
     seed = sum(ord(c) for c in gstin)
     rng = random.Random(seed)
-    base_score = rng.randint(400, 850)
+    
+    base_score = current_score if current_score is not None else rng.randint(400, 850)
     
     history = []
-    for days_ago in range(n - 1, -1, -1):
+    current_day_score = base_score
+    
+    # Build backward from today
+    for days_ago in range(n):
         target_date = datetime.date.today() - datetime.timedelta(days=days_ago)
-        daily_score = base_score + rng.randint(-30, 30)
-        daily_score = max(300, min(900, daily_score))
         
         history.append({
             "date": target_date.isoformat(),
-            "score": daily_score,
-            "band": "Low" if daily_score >= 750 else ("Medium" if daily_score >= 600 else "High")
+            "score": current_day_score,
+            "band": "Low" if current_day_score >= 750 else ("Medium" if current_day_score >= 600 else "High")
         })
-        # progress the base slowly
-        base_score += rng.randint(-5, 5)
+        
+        # Previous day's score
+        current_day_score -= rng.randint(-20, 20)
+        current_day_score = max(300, min(900, current_day_score))
+        
+    # Reverse to return chronological order (oldest to newest)
+    history.reverse()
         
     return {"gstin": gstin, "history": history}
