@@ -58,6 +58,15 @@ html, body, [class*="css"] {
 
 .main { background: #0a0e1a; }
 
+.metric-box {
+    background: rgba(255,255,255,0.04);
+    border-radius: 12px;
+    padding: 1.2rem;
+    text-align: center;
+    border: 1px solid rgba(255,255,255,0.08);
+    transition: all 0.3s ease;
+}
+
 .score-card {
     background: linear-gradient(135deg, #1a1f35 0%, #0d1124 100%);
     border: 1px solid rgba(99,179,237,0.2);
@@ -65,40 +74,19 @@ html, body, [class*="css"] {
     padding: 2rem;
     text-align: center;
     box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    transition: all 0.3s ease;
 }
 
-.score-number {
-    font-size: 5rem;
-    font-weight: 800;
-    line-height: 1;
-    background: linear-gradient(135deg, #63b3ed, #9f7aea);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
+.score-card:hover {
+    transform: scale(1.02);
+    box-shadow: 0 10px 45px rgba(159,122,234,0.3);
+    border-color: rgba(159,122,234,0.5);
 }
 
-.band-low    { color: #38a169; font-weight: 700; font-size: 1.4rem; }
-.band-medium { color: #d69e2e; font-weight: 700; font-size: 1.4rem; }
-.band-high   { color: #e53e3e; font-weight: 700; font-size: 1.4rem; }
-
-.reason-card {
-    background: rgba(255,255,255,0.04);
-    border-left: 3px solid #63b3ed;
-    border-radius: 8px;
-    padding: 0.7rem 1rem;
-    margin: 0.4rem 0;
-    font-size: 0.9rem;
-    color: #e2e8f0;
-}
-
-.reason-negative { border-left-color: #e53e3e; }
-.reason-positive { border-left-color: #38a169; }
-
-.metric-box {
-    background: rgba(255,255,255,0.04);
-    border-radius: 12px;
-    padding: 1.2rem;
-    text-align: center;
-    border: 1px solid rgba(255,255,255,0.08);
+.metric-box:hover, .reason-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 24px rgba(99,179,237,0.15);
+    border-color: rgba(99,179,237,0.4);
 }
 
 .metric-label { font-size: 0.75rem; color: #718096; text-transform: uppercase; letter-spacing: 0.05em; }
@@ -221,7 +209,7 @@ with tab_invoice:
 
 def call_api(gstin: str) -> dict | None:
     try:
-        r = requests.get(f"{API_BASE}/score/{gstin}", timeout=30)
+        r = requests.post(f"{API_BASE}/api/analyze", json={"gstin": gstin, "source": "dummy"}, timeout=30)
         if r.status_code == 200:
             return r.json()
         else:
@@ -259,7 +247,7 @@ def call_api_invoice(file_list: list, gstin: str = "") -> dict | None:
 
 def call_history(gstin: str) -> list | None:
     try:
-        r = requests.get(f"{API_BASE}/score-history/{gstin}", timeout=30)
+        r = requests.get(f"{API_BASE}/api/score-history/{gstin}", timeout=30)
         if r.status_code == 200:
             return r.json().get("history", [])
     except Exception:
@@ -298,14 +286,15 @@ elif score_invoice_btn and uploaded_files:
         gstin_display = data.get("gstin", "")
 
 if data:
-    score   = data["credit_score"]
-    band    = data["risk_band"]
-    reasons = data["top_reasons"]
-    features= data["features"]
-    shap    = data["shap_values"]
-    fraud   = data["fraud"]
-    loan    = data["loan"]
-    ts      = data["freshness_timestamp"]
+    score   = data.get("credit_score", 0)
+    band    = "Low" if score >= 750 else ("Medium" if score >= 600 else "High")
+    reasons = data.get("explanations", [])
+    features= data.get("features", {})
+    fraud_risk   = data.get("fraud_risk", 0.0)
+    loan_amount  = data.get("loan_amount", 0)
+    loan_tenure  = data.get("loan_tenure", "")
+    shap         = data.get("shap_values", {})
+    ts      = "Live (Simulated Data)"
 
     # ── Row 1: Score card + metrics ──
     r1c1, r1c2 = st.columns([1.6, 2.4])
@@ -318,54 +307,51 @@ if data:
             <div style="color:#718096; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.1em;">Credit Score</div>
             <div class="score-number">{score}</div>
             <div class="{band_class}">{band_emoji} {band} Risk</div>
-            <div style="color:#4a5568; font-size:0.75rem; margin-top:0.8rem;">Scale: 300 – 900</div>
+        <div style="color:#4a5568; font-size:0.75rem; margin-top:0.8rem;">Scale: 300 – 900</div>
         </div>
-        <div class="timestamp"> Freshness: {ts}</div>
         """, unsafe_allow_html=True)
+        # Dynamic progress bar for interactivity
+        st.progress(max(0.0, min((score - 300) / 600, 1.0)))
+        st.markdown(f'<div class="timestamp"> Freshness: {ts}</div>', unsafe_allow_html=True)
 
     with r1c2:
         # Metrics grid
         m1, m2, m3 = st.columns(3)
         with m1:
-            st.markdown(f"""
-            <div class="metric-box">
-                <div class="metric-label">Avg UPI Inflow</div>
-                <div class="metric-value">₹{int(features['avg_upi_inflow']):,}</div>
-            </div>""", unsafe_allow_html=True)
+            trend = features.get("monthly_trend", 1.0)
+            delta_val = (trend - 1.0) * 100
+            st.metric("Total Turnover", f"₹{int(features.get('total_turnover', 0)):,}", delta=f"{delta_val:+.1f}% (vs last mo)")
         with m2:
-            gst_pct = int(features["gst_consistency"] * 100)
+            gst_pct = int(features.get("composite_compliance", 0) * 100)
             st.markdown(f"""
             <div class="metric-box">
-                <div class="metric-label">GST Compliance</div>
+                <div class="metric-label">Composite Compliance</div>
                 <div class="metric-value">{gst_pct}%</div>
             </div>""", unsafe_allow_html=True)
         with m3:
-            st.markdown(f"""
-            <div class="metric-box">
-                <div class="metric-label">Transaction Freq</div>
-                <div class="metric-value">{int(features['transaction_frequency'])}/mo</div>
-            </div>""", unsafe_allow_html=True)
+            growth = features.get("growth_rate", 0) * 100
+            st.metric("Avg Invoice", f"₹{int(features.get('avg_invoice_value', 0)):,}", delta=f"{growth:+.1f}% YoY")
 
         m4, m5, m6 = st.columns(3)
         with m4:
             st.markdown(f"""
             <div class="metric-box">
                 <div class="metric-label">Recommended Loan</div>
-                <div class="metric-value">₹{loan['amount']:,}</div>
+                <div class="metric-value">₹{loan_amount:,}</div>
             </div>""", unsafe_allow_html=True)
         with m5:
             st.markdown(f"""
             <div class="metric-box">
                 <div class="metric-label">Tenure</div>
-                <div class="metric-value">{loan['tenure']}</div>
+                <div class="metric-value">{loan_tenure}</div>
             </div>""", unsafe_allow_html=True)
         with m6:
-            f_class = "fraud-risk" if fraud["risk_score"] > 0.5 else ("fraud-warning" if fraud["risk_score"] > 0.2 else "fraud-clean")
-            f_icon  = "🔴" if fraud["risk_score"] > 0.5 else ("🟡" if fraud["risk_score"] > 0.2 else "🟢")
+            f_class = "fraud-risk" if fraud_risk > 0.5 else ("fraud-warning" if fraud_risk > 0.2 else "fraud-clean")
+            f_icon  = "🔴" if fraud_risk > 0.5 else ("🟡" if fraud_risk > 0.2 else "🟢")
             st.markdown(f"""
             <div class="metric-box">
                 <div class="metric-label">Fraud Risk</div>
-                <div class="metric-value {f_class}">{f_icon} {fraud['risk_score']:.0%}</div>
+                <div class="metric-value {f_class}">{f_icon} {fraud_risk:.0%}</div>
             </div>""", unsafe_allow_html=True)
 
     # ── Row 2: Reasons + SHAP chart ──
@@ -379,34 +365,46 @@ if data:
             cls    = "reason-negative" if is_neg else "reason-positive"
             icon   = "" if is_neg else ""
             st.markdown(f'<div class="reason-card {cls}">{icon} {reason}</div>', unsafe_allow_html=True)
+            
+        st.markdown('<div class="section-title" style="margin-top:2rem;"> Data Source</div>', unsafe_allow_html=True)
+        source_name = data.get("data_source", "dummy").upper()
+        st.markdown(f"""
+        <div class="metric-box">
+            <div class="metric-label">Current Strategy Backend</div>
+            <div class="metric-value" style="color:#63b3ed; font-size:1.2rem;">{source_name}</div>
+        </div>
+        """, unsafe_allow_html=True)
 
     with r2c2:
         st.markdown('<div class="section-title"> Feature Contributions (SHAP)</div>', unsafe_allow_html=True)
-        shap_df = (
-            pd.DataFrame({"Feature": list(shap.keys()), "SHAP Value": list(shap.values())})
-            .sort_values("SHAP Value", key=abs, ascending=True)
-        )
-        colors = ["#e53e3e" if v < 0 else "#38a169" for v in shap_df["SHAP Value"]]
+        if shap:
+            shap_df = (
+                pd.DataFrame({"Feature": list(shap.keys()), "SHAP Value": list(shap.values())})
+                .sort_values("SHAP Value", key=abs, ascending=True)
+            )
+            colors = ["#e53e3e" if v < 0 else "#38a169" for v in shap_df["SHAP Value"]]
 
-        fig, ax = plt.subplots(figsize=(7, 4))
-        fig.patch.set_facecolor("#0d1124")
-        ax.set_facecolor("#0d1124")
-        bars = ax.barh(shap_df["Feature"], shap_df["SHAP Value"], color=colors, height=0.55)
-        ax.axvline(0, color="#4a5568", linewidth=0.8)
-        ax.set_xlabel("SHAP Value (impact on score)", color="#718096", fontsize=9)
-        ax.tick_params(colors="#a0aec0", labelsize=8)
-        for spine in ax.spines.values():
-            spine.set_edgecolor("#2d3748")
-        ax.spines["top"].set_visible(False)
-        ax.spines["right"].set_visible(False)
+            fig, ax = plt.subplots(figsize=(7, 4))
+            fig.patch.set_facecolor("#0d1124")
+            ax.set_facecolor("#0d1124")
+            bars = ax.barh(shap_df["Feature"], shap_df["SHAP Value"], color=colors, height=0.55)
+            ax.axvline(0, color="#4a5568", linewidth=0.8)
+            ax.set_xlabel("SHAP Value (impact on score)", color="#718096", fontsize=9)
+            ax.tick_params(colors="#a0aec0", labelsize=8)
+            for spine in ax.spines.values():
+                spine.set_edgecolor("#2d3748")
+            ax.spines["top"].set_visible(False)
+            ax.spines["right"].set_visible(False)
 
-        pos_patch = mpatches.Patch(color="#38a169", label="Positive impact")
-        neg_patch = mpatches.Patch(color="#e53e3e", label="Negative impact")
-        ax.legend(handles=[pos_patch, neg_patch], facecolor="#1a1f35",
-                  labelcolor="#a0aec0", fontsize=8, framealpha=0.8)
-        plt.tight_layout()
-        st.pyplot(fig)
-        plt.close()
+            pos_patch = mpatches.Patch(color="#38a169", label="Positive impact")
+            neg_patch = mpatches.Patch(color="#e53e3e", label="Negative impact")
+            ax.legend(handles=[pos_patch, neg_patch], facecolor="#1a1f35",
+                      labelcolor="#a0aec0", fontsize=8, framealpha=0.8)
+            plt.tight_layout()
+            st.pyplot(fig)
+            plt.close()
+        else:
+            st.markdown("<p style='color:#a0aec0;'>No SHAP data available from backend.</p>", unsafe_allow_html=True)
 
     # ── Row 3: Score trend + Fraud graph ──
     r3c1, r3c2 = st.columns([2, 1.4])
@@ -442,8 +440,8 @@ if data:
 
     with r3c2:
         st.markdown('<div class="section-title"> Fraud Analysis</div>', unsafe_allow_html=True)
-        fraud_icon  = "🔴 HIGH RISK" if fraud["risk_score"] > 0.5 else ("🟡 MODERATE" if fraud["risk_score"] > 0.2 else "🟢 CLEAN")
-        fraud_color = "#e53e3e" if fraud["risk_score"] > 0.5 else ("#d69e2e" if fraud["risk_score"] > 0.2 else "#38a169")
+        fraud_icon  = "🔴 HIGH RISK" if fraud_risk > 0.5 else ("🟡 MODERATE" if fraud_risk > 0.2 else "🟢 CLEAN")
+        fraud_color = "#e53e3e" if fraud_risk > 0.5 else ("#d69e2e" if fraud_risk > 0.2 else "#38a169")
 
         st.markdown(f"""
         <div class="metric-box" style="margin-bottom:0.6rem;">
@@ -454,21 +452,13 @@ if data:
         fd1, fd2 = st.columns(2)
         with fd1:
             st.markdown(f"""<div class="metric-box">
-                <div class="metric-label">Cycles Found</div>
-                <div class="metric-value">{fraud['cycle_count']}</div>
+                <div class="metric-label">Sector Risk</div>
+                <div class="metric-value">{features.get('sector_risk', 0):.2f}</div>
             </div>""", unsafe_allow_html=True)
         with fd2:
             st.markdown(f"""<div class="metric-box">
-                <div class="metric-label">ML Fraud Flag</div>
-                <div class="metric-value">{" Yes" if fraud['fraud_flag'] else " No"}</div>
-            </div>""", unsafe_allow_html=True)
-
-        if fraud["affected_nodes"]:
-            st.markdown(f"""<div class="metric-box" style="margin-top:0.6rem;">
-                <div class="metric-label">Suspicious Entities ({len(fraud['affected_nodes'])})</div>
-                <div style="font-size:0.75rem;color:#a0aec0;margin-top:0.4rem;">
-                    {"<br>".join(fraud['affected_nodes'][:5])}
-                </div>
+                <div class="metric-label">Anomaly Ratio</div>
+                <div class="metric-value">{features.get('high_value_ratio', 0):.2f}</div>
             </div>""", unsafe_allow_html=True)
 
     # ── Row 4: Feature table ──
