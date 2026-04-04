@@ -1,23 +1,29 @@
-from typing import Dict, Any
-from backend.utils.helpers import normalize
+from typing import Dict, Any, List
+
+FEATURE_ORDER = [
+    "total_turnover",
+    "avg_invoice_value",
+    "invoice_frequency",
+    "buyer_diversity",
+    "growth_rate",
+    "gst_consistency",
+    "filing_consistency",
+    "avg_turnover",
+    "gst_delay_days",
+    "sector_risk",
+    "compliance_score",
+    "buyer_concentration"
+]
 
 def engineer_features(gst_profile: Dict[str, Any], aggregated_invoices: Dict[str, Any]) -> Dict[str, Any]:
-    """Combine GST profile and Aggregated features, normalize where needed."""
-    
-    # Start with base stats
     features = {**gst_profile, **aggregated_invoices}
     
-    # Normalizing heavy values for ML models
-    features["norm_turnover"] = normalize(features.get("total_turnover", 0), 0, 10000000)
-    features["norm_avg_invoice"] = normalize(features.get("avg_invoice_value", 0), 0, 500000)
-    features["norm_delay_days"] = normalize(features.get("gst_delay_days", 0), 0, 90)
+    features["norm_turnover"] = min(features.get("total_turnover", 0) / 10000000, 1.0)
+    features["norm_delay_days"] = min(features.get("gst_delay_days", 0) / 90, 1.0)
+    features["composite_compliance"] = (features.get("gst_consistency", 0) * 0.5) + (features.get("compliance_score", 0) * 0.5)
     
-    # Derived composite risk feature
-    base_compliance = features.get("compliance_score", 0.5)
-    consistency = features.get("filing_consistency", 0.5)
-    features["composite_compliance"] = (base_compliance * 0.7) + (consistency * 0.3)
-    
-    # Remove strings from features to make ML ready
-    features.pop("gstin", None)
-    
+    features["buyer_concentration"] = 1.0 - features.get("buyer_diversity", 0.5)
     return features
+
+def to_vector(features: Dict[str, Any]) -> List[float]:
+    return [float(features.get(f, 0.0)) for f in FEATURE_ORDER]

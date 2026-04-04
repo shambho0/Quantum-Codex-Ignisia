@@ -5,7 +5,7 @@ from backend.connectors.router import fetch_invoices
 from backend.processing.gst_profile import generate_gst_profile
 from backend.processing.aggregator import aggregate_invoices
 from backend.model.features import engineer_features
-from backend.model.scorer import generate_credit_score, generate_fraud_risk, recommend_loan
+from backend.model.scorer import generate_predictions, recommend_loan
 from backend.explain.explain import generate_explanations
 
 router = APIRouter()
@@ -41,19 +41,19 @@ async def analyze_gstin(request: AnalyzeRequest):
     final_features = engineer_features(gst_profile, aggregated_invoices)
     
     # 6. Apply scoring logic
-    credit_score = generate_credit_score(final_features)
-    fraud_risk = generate_fraud_risk(final_features)
+    credit_score, fraud_risk, model_used = generate_predictions(final_features)
     
     # 7. Get loan logic
     total_turnover = aggregated_invoices.get("total_turnover", 0.0)
     loan_info = recommend_loan(credit_score, total_turnover, fraud_risk)
     
     # 8. Explainability
-    explanations = generate_explanations(final_features, credit_score, fraud_risk)
+    explanations = generate_explanations(final_features, credit_score, fraud_risk, model_used)
     
     return {
         "gstin": request.gstin,
         "data_source": final_source,
+        "model_used": model_used,
         "credit_score": credit_score,
         "fraud_risk": fraud_risk,
         "loan_amount": loan_info["amount"],
@@ -87,11 +87,10 @@ async def analyze_invoice(
     aggregated_invoices = aggregate_invoices(invoices)
     final_features = engineer_features(gst_profile, aggregated_invoices)
     
-    credit_score = generate_credit_score(final_features)
-    fraud_risk = generate_fraud_risk(final_features)
+    credit_score, fraud_risk, model_used = generate_predictions(final_features)
     total_turnover = aggregated_invoices.get("total_turnover", 0.0)
     loan_info = recommend_loan(credit_score, total_turnover, fraud_risk)
-    explanations = generate_explanations(final_features, credit_score, fraud_risk)
+    explanations = generate_explanations(final_features, credit_score, fraud_risk, model_used)
     
     # Mock OCR data response specifically for the dashboard 
     invoice_data = {
@@ -107,6 +106,7 @@ async def analyze_invoice(
     return {
         "gstin": seller_gstin,
         "data_source": "ocr_upload",
+        "model_used": model_used,
         "credit_score": credit_score,
         "fraud_risk": fraud_risk,
         "loan_amount": loan_info["amount"],
