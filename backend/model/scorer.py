@@ -25,8 +25,11 @@ def generate_fraud_risk(features: Dict[str, Any]) -> float:
     risk = base_risk + sector_risk + compliance_penalty + anomaly
     return max(0.0, min(1.0, float(risk)))
 
-def recommend_loan(score: int, turnover: float) -> Dict[str, Any]:
-    """Dynamic loan recommendation based on score and turnover."""
+def recommend_loan(score: int, turnover: float, fraud_risk: float) -> Dict[str, Any]:
+    """Dynamic loan recommendation based on score, turnover, and fraud risk."""
+    if fraud_risk > 0.7:
+        return {"amount": 0, "tenure": "0 months", "status": "Rejected - High Fraud Risk"}
+        
     if score < 500:
         return {"amount": 0, "tenure": "0 months", "status": "Rejected"}
         
@@ -41,6 +44,18 @@ def recommend_loan(score: int, turnover: float) -> Dict[str, Any]:
         tenure = "12 months"
     else:
         multiplier = 0.4
+        tenure = "6 months"
+        
+    # Apply inversely proportional fraud risk penalty to multiplier
+    # Formula: Multiplier = Multiplier / (1 + k * fraud_risk)
+    k = 5.0  # Steering const
+    risk_discount = 1.0 / (1.0 + (k * fraud_risk))
+    multiplier *= risk_discount
+    
+    # Cap maximum tenure exposure if fraud risk is elevated
+    if fraud_risk > 0.35 and tenure == "24 months":
+        tenure = "12 months"
+    if fraud_risk > 0.5:
         tenure = "6 months"
         
     recommended_amount = max_loan * multiplier

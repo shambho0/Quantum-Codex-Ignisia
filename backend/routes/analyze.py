@@ -46,7 +46,7 @@ async def analyze_gstin(request: AnalyzeRequest):
     
     # 7. Get loan logic
     total_turnover = aggregated_invoices.get("total_turnover", 0.0)
-    loan_info = recommend_loan(credit_score, total_turnover)
+    loan_info = recommend_loan(credit_score, total_turnover, fraud_risk)
     
     # 8. Explainability
     explanations = generate_explanations(final_features, credit_score, fraud_risk)
