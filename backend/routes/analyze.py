@@ -1,5 +1,5 @@
-from fastapi import APIRouter, HTTPException
-from typing import Optional
+from fastapi import APIRouter, HTTPException, File, Form, UploadFile
+from typing import Optional, List
 from pydantic import BaseModel, Field
 from backend.connectors.router import fetch_invoices
 from backend.processing.gst_profile import generate_gst_profile
@@ -63,6 +63,60 @@ async def analyze_gstin(request: AnalyzeRequest):
         "top_positive_factors": explanations["top_positive_factors"],
         "top_negative_factors": explanations["top_negative_factors"],
         "shap_values": explanations.get("shap_values", {})
+    }
+
+@router.post("/score-invoice")
+async def analyze_invoice(
+    gstin: str = Form(""),
+    files: List[UploadFile] = File(...)
+):
+    """Fallback endpoint for dashboard OCR feature."""
+    from backend.processing.parser import parse_pdfs, expand_invoices_synthetically
+    
+    # 1. Parse uploaded images/pdfs
+    invoices = await parse_pdfs(files)
+    
+    # If the user didn't enter a GSTIN, grab one from the parser mock
+    seller_gstin = gstin if (gstin and len(gstin) == 15) else invoices[0]["seller_gstin"]
+    
+    # Scale up synthetically so the ML model has enough data
+    invoices = expand_invoices_synthetically(invoices, 150)
+    
+    # Execute normal pipeline
+    gst_profile = generate_gst_profile(seller_gstin)
+    aggregated_invoices = aggregate_invoices(invoices)
+    final_features = engineer_features(gst_profile, aggregated_invoices)
+    
+    credit_score = generate_credit_score(final_features)
+    fraud_risk = generate_fraud_risk(final_features)
+    total_turnover = aggregated_invoices.get("total_turnover", 0.0)
+    loan_info = recommend_loan(credit_score, total_turnover, fraud_risk)
+    explanations = generate_explanations(final_features, credit_score, fraud_risk)
+    
+    # Mock OCR data response specifically for the dashboard 
+    invoice_data = {
+        "has_ocr": True,
+        "n_invoices": len(files),
+        "total_amount": sum(f.get("amount", 0) for f in invoices[:len(files)]),
+        "tax_amount": sum(f.get("gst_amount", 0) for f in invoices[:len(files)]),
+        "line_items": len(files) * 3,
+        "ocr_text": "MOCK OCR TEXT GENERATED FROM IMAGES...\\nGSTIN: " + seller_gstin + "\\nTOTAL: " + str(total_turnover),
+        "extracted_features": final_features
+    }
+    
+    return {
+        "gstin": seller_gstin,
+        "data_source": "ocr_upload",
+        "credit_score": credit_score,
+        "fraud_risk": fraud_risk,
+        "loan_amount": loan_info["amount"],
+        "loan_tenure": loan_info["tenure"],
+        "features": final_features,
+        "explanations": explanations["insights"],
+        "top_positive_factors": explanations["top_positive_factors"],
+        "top_negative_factors": explanations["top_negative_factors"],
+        "shap_values": explanations.get("shap_values", {}),
+        "invoice_data": invoice_data
     }
 
 @router.get("/score-history/{gstin}")

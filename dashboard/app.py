@@ -227,7 +227,7 @@ def call_api_invoice(file_list: list, gstin: str = "") -> dict | None:
     try:
         files = [("files", (f.name, f.read(), "image/png")) for f in file_list]
         r = requests.post(
-            f"{API_BASE}/score-invoice",
+            f"{API_BASE}/api/score-invoice",
             files=files,
             data={"gstin": gstin},
             timeout=120,
